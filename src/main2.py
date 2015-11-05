@@ -70,6 +70,7 @@ class Rendezvous:
 		available_ids = range(0, K) # a lista de IDs disponíveis
 
 		interface = args[2] if len(args) > 2 else ''
+		#interface é o endereco IP do rendezvous
 		s.bind((interface, PORT))
 		print 'Listening at', s.getsockname()
 		while True:
@@ -80,7 +81,7 @@ class Rendezvous:
 			if len(data_splitted) == 1 and data_splitted[0] == 'hello':
 				existing = [peer for peer in peers if peer.address == repr(address)]
 				already_exists = len(existing) > 0
-			
+
 				current_id = 0
 				if not already_exists:
 					random_index = random.randint(0, len(available_ids) - 1)
@@ -92,7 +93,8 @@ class Rendezvous:
 					print 'hello from an already existing peer, sending id', current_id
 
 				message = 'ID|%s' % str(current_id)
-				message += '|root' if len(peers) == 1 else ''
+				message += '|root' if len(peers) == 1 else '|address|%s' %peers[0].address
+				#print peers[0].id
 				s.sendto(message, address)
 		
 			# quando o rendezvous recebe um ACK
@@ -108,8 +110,11 @@ class Rendezvous:
 				peer.valid = True
 				s.sendto(data, address) # Enviando o mesmo ACK que foi recebido
 				print [peer.id for peer in peers] # imprimindo todos os IDs que já foram alocados a um peer
-
-
+			#Se nao receber um ACK,  deve tirar o ultimo elemento inserido na lista
+			#elif len(data_splitted) == 2 and data_splitted[0] == 'NAK':
+			#	print data_splitted[0]
+			#	peers.pop()	
+			#	data = ''
 
 ## Representa a estrutura de um Peer visto pelo Rendezvous.
 class Peer:
@@ -124,6 +129,15 @@ class Peer:
 		self.nextIP = None
 		self.nextNextIP = None
 		self.beforeIP = None
+
+
+	## Retorna o endereço do Peer.
+	def getAddress(self):
+		return self.address
+
+	## Retorna o id deste Peer.
+	def getId(self):
+		return self.id
 
 	## @var address
 	#  O endereço associado ao peer.
@@ -157,11 +171,25 @@ class Peer:
 		except:
 			raise
 		else:
+			#cria uma lista splitando as partes da mensagem recebida do Rendezvous
+			print response
 			data_splitted = response.split('|')
-			if 2 <= len(data_splitted) <= 3 and data_splitted[0] == 'ID':
+			if 2 <= len(data_splitted) <= 4 and data_splitted[0] == 'ID':
 				isRoot = True if len(data_splitted) == 3 and data_splitted[2] == 'root' else False
 				print 'Got ID', data_splitted[1] + (' -> is root' if isRoot else '')
-
+				#Se for root ele é o primeiro do dht então tem somente ele para receber os endereços dele mesmo
+				if isRoot:
+					nextIP = self.address
+					nextNextIP = self.address
+					beforeIP = self.address
+				#address  é o endereço do root. Aqui o peer tem que se encontrar na dht comparando ID's
+				elif not isRoot:
+					print data_splitted[3]
+					#1- pedir o id
+					#2- compara
+						#se este for menor, verifica antecessor. Se for menor tb pega o endereço do anterior e 1. 								Senao,  fim
+						#se este for maior, verifica o sucessor. Se for maior tb pega o endereço do sucessor e 1. 								Senao, fim.
+					
 				# enviando um ACK e esperando por resposta
 				try:
 					response = sendAndWaitForResponse('ACK|%s' % data_splitted[1], 0.2, 10, s)
