@@ -93,7 +93,9 @@ class Rendezvous:
 					print 'hello from an already existing peer, sending id', current_id
 
 				message = 'ID|%s' % str(current_id)
-				message += '|root' if len(peers) == 1 else '|address|%s' %peers[0].address
+				message += '|root' if len(peers) == 1 else  ''
+				message += '|address|%s' %peers[0].address if len(peers) > 1 else ''
+				print message
 				s.sendto(message, address)
 		
 			# quando o rendezvous recebe um ACK
@@ -163,6 +165,7 @@ class Peer:
 	#  @param args Os argumentos passados para o programa por linha de comando.
 	def run(self, args = []):
 		host = sys.argv[2]
+		print (host, PORT)
 		s.connect((host, PORT))
 		# enviando um hello e esperando por uma resposta
 		try:
@@ -171,24 +174,12 @@ class Peer:
 			raise
 		else:
 			#cria uma lista splitando as partes da mensagem recebida do Rendezvous
-			print response
 			data_splitted = response.split('|')
 			if 2 <= len(data_splitted) <= 4 and data_splitted[0] == 'ID':
 				isRoot = True if len(data_splitted) == 3 and data_splitted[2] == 'root' else False
 				print 'Got ID', data_splitted[1] + (' -> is root' if isRoot else '')
-				#Se for root ele é o primeiro do dht então tem somente ele para receber os endereços dele mesmo
-				if isRoot:
-					nextIP = self.address
-					nextNextIP = self.address
-					beforeIP = self.address
-				#address  é o endereço do root. Aqui o peer tem que se encontrar na dht comparando ID's
-				elif not isRoot:
-					print data_splitted[3]
-					#1- pedir o id
-					#2- compara
-						#se este for menor, verifica antecessor. Se for menor tb pega o endereço do anterior e 1. 								Senao,  fim
-						#se este for maior, verifica o sucessor. Se for maior tb pega o endereço do sucessor e 1. 								Senao, fim.
-					
+				#se recebeu que nao é o root, recebeu o endereco do root na mensagem
+				rootAddress = data_splitted[3] if len(data_splitted) == 4 and data_splitted[2] == 'address' else False
 				# enviando um ACK e esperando por resposta
 				try:
 					response = sendAndWaitForResponse('ACK|%s' % data_splitted[1], 0.2, 10, s)
@@ -199,6 +190,28 @@ class Peer:
 					if len(data_splitted) == 2 and data_splitted[0] == 'ACK':
 						print 'Got an ACK from server, registered as ID', data_splitted[1]
 
+			s.close()
+			#Se for root ele é o primeiro do dht então tem somente ele para receber os endereços dele mesmo
+			if isRoot:
+				nextIP = self.address
+				nextNextIP = self.address
+				beforeIP = self.address
+			#address  é o endereço do root. Aqui o peer tem que se encontrar na dht comparando ID's
+			elif not isRoot:
+				
+				rootAddress = rootAddress.replace("(","")
+				rootAddress = rootAddress.replace(")","")
+				rootAddress = rootAddress.replace("'", "")
+				rootAddress = rootAddress.split(',')
+				socketToRoot = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+				socketToRoot.connect( (rootAddress[0], int(rootAddress[1])) )
+				print (rootAddress[0], int(rootAddress[1]))
+			
+				#1- pedir o id
+				#2- compara
+					#se este for menor, verifica antecessor. Se for menor tb pega o endereço do anterior e 1. 						Senao,  fim
+					#se este for maior, verifica o sucessor. Se for maior tb pega o endereço do sucessor e 1. 						Senao, fim.
+			
 
 
 #Cria um Rendezvous
