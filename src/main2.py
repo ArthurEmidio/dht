@@ -94,7 +94,6 @@ class Rendezvous:
 
 				message = 'ID|%s' % str(current_id)
 				message += '|root' if len(peers) == 1 else '|address|%s' %peers[0].address
-				#print peers[0].id
 				s.sendto(message, address)
 		
 			# quando o rendezvous recebe um ACK
