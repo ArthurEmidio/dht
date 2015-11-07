@@ -10,7 +10,6 @@ PORT = 1060
 ## Quantos IDs poderão ser alocados.
 K = 50
 ## O socket inicializado usando UDP.
-s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
 ## Envia uma mensagem dado um socket (que já foi conectado em um endereço de destino) e espera por uma resposta.
 #
@@ -66,6 +65,7 @@ class Rendezvous:
 	## Executa as funcionalidades do Rendezvous.
 	#  @param args Os argumentos passados para o programa por linha de comando.
 	def run(self, args = []):
+		s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 		peers = [] # A lista de peers alocados
 		available_ids = range(0, K) # a lista de IDs disponíveis
 
@@ -95,7 +95,7 @@ class Rendezvous:
 				message = 'ID|%s' % str(current_id)
 				message += '|root' if len(peers) == 1 else  ''
 				message += '|address|%s' %peers[0].address if len(peers) > 1 else ''
-				print message
+
 				s.sendto(message, address)
 		
 			# quando o rendezvous recebe um ACK
@@ -116,6 +116,8 @@ class Rendezvous:
 			#	print data_splitted[0]
 			#	peers.pop()	
 			#	data = ''
+
+		s.close()
 
 ## Representa a estrutura de um Peer visto pelo Rendezvous.
 class Peer:
@@ -164,6 +166,7 @@ class Peer:
 	## Executa as funcionalidades do Peer.
 	#  @param args Os argumentos passados para o programa por linha de comando.
 	def run(self, args = []):
+		s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 		host = sys.argv[2]
 		print (host, PORT)
 		s.connect((host, PORT))
@@ -190,30 +193,37 @@ class Peer:
 					if len(data_splitted) == 2 and data_splitted[0] == 'ACK':
 						print 'Got an ACK from server, registered as ID', data_splitted[1]
 
-			s.close()
+		s.close()
+		#socket de conexao entre peers
+		sockToPeer = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)						
 			#Se for root ele é o primeiro do dht então tem somente ele para receber os endereços dele mesmo
-			if isRoot:
-				nextIP = self.address
-				nextNextIP = self.address
-				beforeIP = self.address
-			#address  é o endereço do root. Aqui o peer tem que se encontrar na dht comparando ID's
-			elif not isRoot:
-				
-				rootAddress = rootAddress.replace("(","")
-				rootAddress = rootAddress.replace(")","")
-				rootAddress = rootAddress.replace("'", "")
-				rootAddress = rootAddress.split(',')
-				socketToRoot = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-				socketToRoot.connect( (rootAddress[0], int(rootAddress[1])) )
-				print (rootAddress[0], int(rootAddress[1]))
-			
+		if isRoot:
+			nextIP = self.address
+			nextNextIP = self.address
+			beforeIP = self.address
+		#address  é o endereço do root. Aqui o peer tem que se encontrar na dht comparando ID's
+		elif not isRoot:
+			rootAddress = rootAddress.replace("(","").replace(")","").replace("'", "")
+			rootAddress = rootAddress.split(',')
+			#conecta com o root
+			sockToPeer.connect( (rootAddress[0], int(rootAddress[1])) )
+			#sockToPeer.sendTo('Request|ID', (rootAddress[0], int(rootAddress[1])))			
+	
+		#nesse while verificar possiveis mensagens de sockets recebidas e responde-las
+		while(True):
+			data, address = sockToPeer.recvfrom(MAX)
+			data_splitted = data.split('|')
+			#uma mensagem com um request no primeiro campo indica que alguem quer alguma informaçao deste peer
+			if data_splitted[0] == 'Request':
+				if data_splitted[1] == 'ID':
+					print ''
 				#1- pedir o id
 				#2- compara
 					#se este for menor, verifica antecessor. Se for menor tb pega o endereço do anterior e 1. 						Senao,  fim
 					#se este for maior, verifica o sucessor. Se for maior tb pega o endereço do sucessor e 1. 						Senao, fim.
-			
+			#Colocar um while true aqui
 
-
+		sockToPeer.close()
 #Cria um Rendezvous
 if 2 <= len(sys.argv) <= 3 and sys.argv[1] == 'rendezvous':
 	rend = Rendezvous(0 , 0)
