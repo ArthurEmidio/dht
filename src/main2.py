@@ -20,10 +20,10 @@ K = 50
 #  @param initialWait O período inicial de tempo (em segundos) que será esperado por uma resposta antes de tentar enviar novamente.
 #  @param timeout O tempo máximo de espera (em segundos) antes de ocorrer timeout.
 #  @param sock O socket que será usado para a comunicação. Ele precisa ser um socket que já foi conectado com algum endereço (usando connect).
-def sendAndWaitForResponse(sendMsg, initialWait, timeout, sock):
+def sendAndWaitForResponse(sendMsg, initialWait, timeout, address, sock):
 	delay = initialWait
 	while True:
-		sock.send(sendMsg)
+		sock.sendto(sendMsg, address)
 		print 'Waiting up to', delay, 'seconds to receive a reply from server.'
 		sock.settimeout(delay)
 		try:
@@ -75,18 +75,20 @@ class Rendezvous:
 		print 'Listening at', s.getsockname()
 		while True:
 			data, address = s.recvfrom(MAX)
+			print 'recebi msg desse brother -->',address
 			data_splitted = data.split('|')
 
 			# quando o rendezvous recebe um hello
 			if len(data_splitted) == 1 and data_splitted[0] == 'hello':
-				existing = [peer for peer in peers if peer.address == repr(address)]
+				existing = [peer for peer in peers if peer.myAddress == repr(address)]
 				already_exists = len(existing) > 0
 
 				current_id = 0
 				if not already_exists:
 					random_index = random.randint(0, len(available_ids) - 1)
 					current_id = available_ids.pop(random_index)
-					peers.append(Rendezvous(current_id, repr(address)))
+					peers.append(Peer(current_id, repr(address)))
+					print repr(address)
 					print 'hello from a new peer, sending id', current_id
 				else:
 					current_id = existing[0].id
@@ -94,8 +96,9 @@ class Rendezvous:
 
 				message = 'ID|%s' % str(current_id)
 				message += '|root' if len(peers) == 1 else  ''
-				message += '|address|%s' %peers[0].address if len(peers) > 1 else ''
-
+				#envia endereco do root como string
+				message += '|address|%s' %peers[0].getAddress() if len(peers) > 1 else ''
+				print 'mandando essa msg: ',message
 				s.sendto(message, address)
 		
 			# quando o rendezvous recebe um ACK
@@ -125,9 +128,9 @@ class Peer:
 	#
 	#  @param id O ID que será alocado ao peer.
 	#  @param address O endereço de rede correspondente ao peer.
-	def __init__(self, id, address):
+	def __init__(self, id, myAddress):
 		self.id = id
-		self.address = address
+		self.myAddress = myAddress
 		self.valid = False
 		self.nextIP = None
 		self.nextNextIP = None
@@ -136,7 +139,7 @@ class Peer:
 
 	## Retorna o endereço do Peer.
 	def getAddress(self):
-		return self.address
+		return self.myAddress
 
 	## Retorna o id deste Peer.
 	def getId(self):
@@ -167,12 +170,15 @@ class Peer:
 	#  @param args Os argumentos passados para o programa por linha de comando.
 	def run(self, args = []):
 		s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-		host = sys.argv[2]
-		print (host, PORT)
-		s.connect((host, PORT))
+		print self.myAddress
+		s.bind(self.myAddress)
+		#print address, '-', s.getsockname()
+		rendevAddress = (sys.argv[2],PORT)
+		#print rendevAddress
+
 		# enviando um hello e esperando por uma resposta
 		try:
-			response = sendAndWaitForResponse('hello', 0.2, 10, s)
+			response = sendAndWaitForResponse('hello', 0.2, 10, rendevAddress, s)
 		except:
 			raise
 		else:
@@ -185,7 +191,7 @@ class Peer:
 				rootAddress = data_splitted[3] if len(data_splitted) == 4 and data_splitted[2] == 'address' else False
 				# enviando um ACK e esperando por resposta
 				try:
-					response = sendAndWaitForResponse('ACK|%s' % data_splitted[1], 0.2, 10, s)
+					response = sendAndWaitForResponse('ACK|%s' % data_splitted[1], 0.2, 10, rendevAddress, s)
 				except:
 					raise
 				else:
@@ -193,45 +199,53 @@ class Peer:
 					if len(data_splitted) == 2 and data_splitted[0] == 'ACK':
 						print 'Got an ACK from server, registered as ID', data_splitted[1]
 
-		s.close()
-		#socket de conexao entre peers
-		sockToPeer = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)						
-			#Se for root ele é o primeiro do dht então tem somente ele para receber os endereços dele mesmo
+		print 'Sou o', s.getsockname(), 'meu endereco salvo:', self.myAddress		
+		#Se for root ele é o primeiro do dht então tem somente ele para receber os endereços dele mesmo
 		if isRoot:
-			nextIP = self.address
-			nextNextIP = self.address
-			beforeIP = self.address
+			nextIP = self.myAddress
+			nextNextIP = self.myAddress
+			beforeIP = self.myAddress
 		#address  é o endereço do root. Aqui o peer tem que se encontrar na dht comparando ID's
 		elif not isRoot:
 			rootAddress = rootAddress.replace("(","").replace(")","").replace("'", "")
 			rootAddress = rootAddress.split(',')
-			#conecta com o root
-			sockToPeer.connect( (rootAddress[0], int(rootAddress[1])) )
-			#sockToPeer.sendTo('Request|ID', (rootAddress[0], int(rootAddress[1])))			
+			rootAddress = (rootAddress[0], int(rootAddress[1]))
+			#manda pro root msg pedindo ID
+			message = 'Request|ID'
+			s.sendto(message, rootAddress)			
+			print 'Endereço do root:', rootAddress, "Mensagem: ", message
 	
 		#nesse while verificar possiveis mensagens de sockets recebidas e responde-las
 		while(True):
-			data, address = sockToPeer.recvfrom(MAX)
+			
+			print 'loop'
+			recvSock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+			data, address = recvSock.recvfrom(MAX)
+			print 'recebi msg desse brother -->',address
 			data_splitted = data.split('|')
+			#print 'loop'
 			#uma mensagem com um request no primeiro campo indica que alguem quer alguma informaçao deste peer
-			if data_splitted[0] == 'Request':
-				if data_splitted[1] == 'ID':
-					print ''
+			#if data_splitted[0] == 'Request':
+			#	if data_splitted[1] == 'ID':
+			#		print 'aaaa'
 				#1- pedir o id
 				#2- compara
 					#se este for menor, verifica antecessor. Se for menor tb pega o endereço do anterior e 1. 						Senao,  fim
 					#se este for maior, verifica o sucessor. Se for maior tb pega o endereço do sucessor e 1. 						Senao, fim.
 			#Colocar um while true aqui
+		s.close()
 
-		sockToPeer.close()
+
 #Cria um Rendezvous
 if 2 <= len(sys.argv) <= 3 and sys.argv[1] == 'rendezvous':
-	rend = Rendezvous(0 , 0)
+	address = (sys.argv[2],PORT)
+	rend = Rendezvous(0 , address)
 	rend.run(sys.argv)
 	
 #Cria um Peer
-elif len(sys.argv) == 3 and sys.argv[1] == 'peer':
-	peer = Peer(0 , 0)
+elif len(sys.argv) == 4 and sys.argv[1] == 'peer':
+	address = (sys.argv[2], int(sys.argv[3]))
+	peer = Peer(0 , address)
 	peer.run(sys.argv)
 
 # Em caso de parâmetros passados incorretamente
