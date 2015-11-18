@@ -12,6 +12,9 @@ class Rendezvous:
     ## @var address
     #  O endereço associado ao rendezvous.
     
+    ## @var sock
+    #  O socket associado ao peer.
+    
     ## @var peers
     #  A lista de peers alocados
     
@@ -23,17 +26,17 @@ class Rendezvous:
     #  @param address O endereço de rede correspondente ao rendezvous.
     def __init__(self, address):
         self.address = address
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.sock.bind(self.address)
         self.peers = []
         self.available_ids = range(0, K)
 
     ## Executa as funcionalidades do Rendezvous.
     def run(self):
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.bind(self.address)
-        print 'Listening at', s.getsockname()
+        print 'Listening at', self.sock.getsockname()
         
         while True:
-            data, address = s.recvfrom(common.MAX)
+            data, address = self.sock.recvfrom(common.MAX)
             data_splitted = data.split('|')
             
             print 'Got a message from', address
@@ -57,7 +60,7 @@ class Rendezvous:
                 # Também envia "root" caso seja o 1o peer a entrar na rede ou o endereço do root caso contrário
                 message = 'ID|%s|' % str(current_id)
                 message += 'root' if len(self.peers) == 1 else self.peers[0].address
-                s.sendto(message, address)
+                self.sock.sendto(message, address)
         
             # quando o rendezvous recebe um ACK de algum peer
             elif len(data_splitted) == 2 and data_splitted[0] == 'ACK':
@@ -70,7 +73,7 @@ class Rendezvous:
             
                 peer = existing[0]
                 peer.valid = True
-                s.sendto(data, address) # Enviando o mesmo ACK que foi recebido
+                self.sock.sendto(data, address) # Enviando o mesmo ACK que foi recebido
                 print [peer.id for peer in self.peers] # imprimindo todos os IDs que já foram alocados a um peer
                 
                           
