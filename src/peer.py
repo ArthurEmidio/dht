@@ -128,6 +128,29 @@ class Peer:
         
         return rootAddress                  
 
+    ## Atualiza os ponteiros de vizinhança dos peers vizinhos (inclusive vizinhos de vizinhos)
+    def allocate(self):
+        setMsg = 'Set|nextID|' + str(self.id) + '|nextAddress|' + repr(self.address) + '|nextNextAddress|' + repr(self.nextAddress)
+        gotRightReply = False
+        # while not gotRightReply:
+        gotRightReply = True if 'Setted' in self.makeRequestMessage(setMsg, self.previousAddress) else False
+        
+        setMsg = 'Set|nextNextAddress|' + repr(self.address)
+        gotRightReply = False
+        # while not gotRightReply:
+        gotRightReply = True if 'Setted' in self.makeRequestMessage(setMsg, self.previousPreviousAddress) else False
+        
+        setMsg = 'Set|previousID|' + str(self.id) + '|previousAddress|' + repr(self.address) + '|previousPreviousAddress|' + repr(self.previousAddress)
+        gotRightReply = False
+        # while not gotRightReply:
+        gotRightReply = True if 'Setted' in self.makeRequestMessage(setMsg, self.nextAddress) else False
+        
+        setMsg = 'Set|previousPreviousAddress|' + repr(self.address)
+        gotRightReply = False
+        # while not gotRightReply:
+        gotRightReply = True if 'Setted' in self.makeRequestMessage(setMsg, self.nextNextAddress) else False
+        
+        
     ## Executa as funcionalidades do Peer.
     def run(self):
         self.sock.settimeout(None)        
@@ -146,28 +169,58 @@ class Peer:
             currAddress = rootAddress
             allocated = False
             while not allocated:
-                data_splitted = self.makeRequestMessage('info?', currAddress)
+                request = 'Request|ID|previousID|previousAddress|previousPreviousAddress|nextID|nextAddress|nextNextAddress'
+                data_splitted = self.makeRequestMessage(request, currAddress)
+                data_splitted.remove('')
                 
                 # formato de resposta: id|id_ant|endr_ant|end_ant_do_ant|id_suc|end_suc|end_suc_do_suc
-                if len(data_splitted) != 7:
+                if len(data_splitted) != 8 or data_splitted[0] != 'Reply':
                     print >>sys.stderr, 'Got an unknown message from peer at address', repr(currAddress), ':', '|'.join(data_splitted)
                     exit(2)
                                 
-                currPeer = ExternalPeer(currAddress, int(data_splitted[0]),
-                                        int(data_splitted[1]), common.strToAddr(data_splitted[2]), common.strToAddr(data_splitted[3]),
-                                        int(data_splitted[4]), common.strToAddr(data_splitted[5]), common.strToAddr(data_splitted[6]))
+                currPeer = ExternalPeer(currAddress, int(data_splitted[1]),
+                                        int(data_splitted[2]), common.strToAddr(data_splitted[3]), common.strToAddr(data_splitted[4]),
+                                        int(data_splitted[5]), common.strToAddr(data_splitted[6]), common.strToAddr(data_splitted[7]))
                 
                 if currPeer.id < self.id:
-                    if currPeer.nextID > self.id or currPeer.nextID == currPeer.id:
-                        # TODO: colocar entre currPeer.id e currPeer.nextID
-                        print 'Inserting peer with ID', self.id, 'between', currPeer.id, 'and', currPeer.nextID
+                    if currPeer.nextID > self.id or currPeer.nextID <= currPeer.id:
+                        # colocar entre currPeer.id e currPeer.nextID
+                        isSecondElement = True if currPeer.previousID == currPeer.id else False
+                        
+                        self.nextID = currPeer.nextID
+                        self.nextAddress = currPeer.nextAddress
+                        self.nextNextAddress = currPeer.nextNextAddress if not isSecondElement else self.address
+                        self.previousID = currPeer.id
+                        self.previousAddress = currPeer.address
+                        self.previousPreviousAddress = currPeer.previousAddress if not isSecondElement else self.address
+                        
+                        self.allocate()
+                        
+                        print 'Inserting peer with ID', self.id, 'between', self.previousID, 'and', self.nextID
+                        print 'Previous Previous:', repr(self.previousPreviousAddress)
+                        print 'Next Next:', repr(self.nextNextAddress)
+                        
                         allocated = True
                     else:
                         currAddress = currPeer.nextAddress
                 elif currPeer.id > self.id:
-                    if currPeer.previousID < self.id or currPeer.previousID == currPeer.id:
-                        # TODO: colocar entre currPeer.previousID e currPeer.id
-                        print 'Inserting peer with ID', self.id, 'between', currPeer.previousID, 'and', currPeer.id
+                    if currPeer.previousID < self.id or currPeer.previousID >= currPeer.id:
+                        # colocar entre currPeer.previousID e currPeer.id
+                        isSecondElement = True if currPeer.previousID == currPeer.id else False
+                        
+                        self.nextID = currPeer.id
+                        self.nextAddress = currPeer.address
+                        self.nextNextAddress = currPeer.previousAddress if not isSecondElement else self.address
+                        self.previousID = currPeer.previousID
+                        self.previousAddress = currPeer.previousAddress
+                        self.previousPreviousAddress = currPeer.previousPreviousAddress if not isSecondElement else self.address
+                        
+                        self.allocate()
+                        
+                        print 'Inserting peer with ID', self.id, 'between', self.previousID, 'and', self.nextID
+                        print 'Previous Previous:', repr(self.previousPreviousAddress)
+                        print 'Next Next:', repr(self.nextNextAddress)
+                        
                         allocated = True
                     else:
                         currAddress = currPeer.previousAddress
@@ -183,16 +236,38 @@ class Peer:
             data_splitted = data.split('|') 
             print 'Got a message from', address, 'saying:', repr(data)
             
-            if len(data_splitted) == 1 and data_splitted[0] == 'info?':
-                # formato de resposta: id|id_ant|endr_ant|end_ant_do_ant|id_suc|end_suc|end_suc_do_suc
-                reply = str(self.id) + '|'
-                reply += str(self.previousID) + '|'
-                reply += str(self.previousAddress) + '|'
-                reply += str(self.previousPreviousAddress) + '|'
-                reply += str(self.nextID) + '|'
-                reply += str(self.nextAddress) + '|'
-                reply += str(self.nextNextAddress)
+            if len(data_splitted) > 1 and data_splitted[0] == 'Request':
+                reply = 'Reply|'
+                reply += repr(self.address) + '|' if 'address' in data_splitted else ''
+                reply += str(self.id) + '|' if 'ID' in data_splitted else ''
+                reply += str(self.previousID) + '|' if 'previousID' in data_splitted else ''
+                reply += repr(self.previousAddress) + '|' if 'previousAddress' in data_splitted else ''
+                reply += repr(self.previousPreviousAddress) + '|' if 'previousPreviousAddress' in data_splitted else ''
+                reply += str(self.nextID) + '|' if 'nextID' in data_splitted else ''
+                reply += repr(self.nextAddress) + '|' if 'nextAddress' in data_splitted else ''
+                reply += repr(self.nextNextAddress) + '|' if 'nextNextAddress' in data_splitted else ''
+                               
                 self.sock.sendto(reply, address)
+            elif len(data_splitted) > 1 and data_splitted[0] == 'Set':
+                if 'previousID' in data_splitted:
+                    self.previousID = int(data_splitted[data_splitted.index('previousID') + 1])
+                
+                if 'previousAddress' in data_splitted:
+                    self.previousAddress = common.strToAddr(data_splitted[data_splitted.index('previousAddress') + 1])
+                
+                if 'previousPreviousAddress' in data_splitted:
+                    self.previousPreviousAddress = common.strToAddr(data_splitted[data_splitted.index('previousPreviousAddress') + 1])
+                
+                if 'nextID' in data_splitted:
+                    self.nextID = int(data_splitted[data_splitted.index('nextID') + 1])
+                    
+                if 'nextAddress' in data_splitted:
+                    self.nextAddress = common.strToAddr(data_splitted[data_splitted.index('nextAddress') + 1])
+                    
+                if 'nextNextAddress' in data_splitted:
+                    self.nextNextAddress = common.strToAddr(data_splitted[data_splitted.index('nextNextAddress') + 1])
+                    
+                self.sock.sendto('Setted', address)
             else:
                 print 'Uh oh, unknown message coming from', address + ':', repr(data)
                       
