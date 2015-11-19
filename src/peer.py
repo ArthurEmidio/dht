@@ -4,6 +4,18 @@
 import common
 import socket, sys, random
 
+## Uma classe construída para representar um Peer externo do atual.
+class ExternalPeer:
+    def __init__(self, address, id, previousID, previousAddress, previousPreviousAddress, nextID, nextAddress, nextNextAddress):
+        self.address = address
+        self.id = id
+        self.previousID = previousID
+        self.previousAddress = previousAddress
+        self.previousPreviousAddress = previousPreviousAddress
+        self.nextID = nextID
+        self.nextAddress = nextAddress
+        self.nextNextAddress = nextNextAddress
+
 ## Representa as funcionalidades de um Peer
 class Peer:
     ## @var address
@@ -27,13 +39,13 @@ class Peer:
     ## @var nextNextAddress
     #  O endereço de IP:Porta do nó sucessor ao nó sucessor a este peer na DHT.
     
-    ## @var beforeID
+    ## @var previousID
     #  O ID do predecessor a este peer na DHT.
         
-    ## @var beforeAddress
+    ## @var previousAddress
     #  O endereço IP:Porta do nó antecessor a este na DHT.
     
-    ## @var beforeBeforeAddress
+    ## @var previousPreviousAddress
     #  O endereço IP:Porta do nó antecessor ao nó antecessor a este peer na DHT.
     
     ## @var rendezvousAddress
@@ -54,24 +66,22 @@ class Peer:
         self.nextAddress = None
         self.nextNextAddress = None
         
-        self.beforeID = None
-        self.beforeAddress = None
-        self.beforeBeforeAddress = None
+        self.previousID = None
+        self.previousAddress = None
+        self.previousPreviousAddress = None
         
         self.rendezvousAddress = rendezvousAddress
-    
+            
     ## Manda uma determinada mensagem para um determinado endereço.
     #
     #  @return a responta da mensagem já cortada.
     def makeRequestMessage(self, sendMsg, address):
         try:
-		    response = common.sendAndWaitForResponse(sendMsg, 0.2, 10, address, self.sock)
+            response = common.sendAndWaitForResponse(sendMsg, 0.2, 10, address, self.sock)
         except:
             raise
         else:
-			return response.split('|')
-
-
+            return response.split('|')
 
     ## Realiza o contato inicial com o Rendezvous.
     #
@@ -128,80 +138,63 @@ class Peer:
             self.nextAddress = self.address
             self.nextNextAddress = self.address
             
-            self.beforeID = self.id
-            self.beforeAddress = self.address
-            self.beforeBeforeAddress = self.address
+            self.previousID = self.id
+            self.previousAddress = self.address
+            self.previousPreviousAddress = self.address
         else:
-            requestID = 'Request|ID'
-            requestNextAddress = 'Request|nextAddress'
-            requestBeforeAddress = 'Request|beforeAddress'
-            address = rootAddress
-            while True:
-                #pede o id para o peer
-                data_splitted = self.makeRequestMessage(requestID, address)
-                if len(data_splitted) == 3 and data_splitted[0] == 'Response' and data_splitted[1] == 'ID':
-                    requestedID = data_splitted[2]
-                    #se o seu id for maior que o do peer, vai pedir o endereco do proximo peer e comparar
-                    if int(self.id) > int(requestedID):
-                        #pede o endereco do proximo peer
-                        data_splitted = self.makeRequestMessage(requestNextAddress, address)
-                        if len(data_splitted) == 3 and data_splitted[0] == 'Response' and data_splitted[1] == 'nextAddress':
-                            nextAddress = common.strToAddr(data_splitted[2])
-                            #pede o id do proximo peer
-                            data_splitted = self.makeRequestMessage(requestID, nextAddress)
-                            if len(data_splitted) == 3 and data_splitted[0] == 'Response' and data_splitted[1] == 'ID':
-                                nextID = data_splitted[2]
-                                if int(self.id) < int(nextID) or int(nextID) == int(requestedID):
-                                    print 'Entered next to->', nextID
-                                    break
-                                    #achou seu lugar, rearranja os ponteiros dos vizinhos e entra
-                                elif int(self.id) > int(nextID):
-                                    #se o id do proximo for maior, ele recebe o endereco do proximo como base e recomeca o loop
-                                    address = nextAddress
-
-                    #se o seu id for menor, vai pedir o endereco do antecessor do peer e comparar
-                    elif int(self.id) < int(requestedID):
-                        #pede o endereco do antecessor
-                        data_splitted = self.makeRequestMessage(requestBeforeAddress, address)
-                        if len(data_splitted) == 3 and data_splitted[0] == 'Response' and data_splitted[1] == 'beforeAddress':
-                            beforeAddress = common.strToAddr(data_splitted[2])
-                            data_splitted = self.makeRequestMessage(requestID, beforeAddress)
-                            if len(data_splitted) == 3 and data_splitted[0] == 'Response' and data_splitted[1] == 'ID':
-                                beforeID = data_splitted[2]
-                                if int(self.id) > int(beforeID) or int(beforeID) == int(requestedID):
-                                    print 'Entered before ->', beforeID
-                                    break
-                                    #achou seu lugar, rearranja os ponteiros dos vizinhos e entra
-                                elif int(self.id) < int(beforeID):
-                                    #se ainda assim for menor, pega o endereco do anterior e recomeca o loop
-                                    address = beforeAddress
-                             
-					
-					
-            #pass # só pra ignorar esse else vazio
-            # TODO: alocar na DHT, contatando primeiramente o root (rootAddress)
-    
+            # procurando o lugar para ser adicionado na DHT e se alocando
+            currAddress = rootAddress
+            allocated = False
+            while not allocated:
+                data_splitted = self.makeRequestMessage('info?', currAddress)
+                
+                # formato de resposta: id|id_ant|endr_ant|end_ant_do_ant|id_suc|end_suc|end_suc_do_suc
+                if len(data_splitted) != 7:
+                    print >>sys.stderr, 'Got an unknown message from peer at address', repr(currAddress), ':', '|'.join(data_splitted)
+                    exit(2)
+                                
+                currPeer = ExternalPeer(currAddress, int(data_splitted[0]),
+                                        int(data_splitted[1]), common.strToAddr(data_splitted[2]), common.strToAddr(data_splitted[3]),
+                                        int(data_splitted[4]), common.strToAddr(data_splitted[5]), common.strToAddr(data_splitted[6]))
+                
+                if currPeer.id < self.id:
+                    if currPeer.nextID > self.id or currPeer.nextID == currPeer.id:
+                        # TODO: colocar entre currPeer.id e currPeer.nextID
+                        print 'Inserting peer with ID', self.id, 'between', currPeer.id, 'and', currPeer.nextID
+                        allocated = True
+                    else:
+                        currAddress = currPeer.nextAddress
+                elif currPeer.id > self.id:
+                    if currPeer.previousID < self.id or currPeer.previousID == currPeer.id:
+                        # TODO: colocar entre currPeer.previousID e currPeer.id
+                        print 'Inserting peer with ID', self.id, 'between', currPeer.previousID, 'and', currPeer.id
+                        allocated = True
+                    else:
+                        currAddress = currPeer.previousAddress
+                else:
+                    print >>sys.stderr, 'Trying to allocate an already existing ID at the DHT:', self.id
+                    exit(3)
+            
         # Loop ouvindo por contato de outros Peers
         self.sock.settimeout(None)
         print '\nListening at', self.sock.getsockname()
         while True:
             data, address = self.sock.recvfrom(common.MAX)
-            data_splitted = data.split('|')	
+            data_splitted = data.split('|') 
             print 'Got a message from', address, 'saying:', repr(data)
-			#se a mensagem for request, pode ser ID ou algum IP
-            if len(data_splitted) == 2 and data_splitted[0] == 'Request':
-                if data_splitted[1] == 'ID':
-                    sendMsg = 'Response|ID|%s' % self.id
-                    self.sock.sendto(sendMsg, address)
-                elif data_splitted[1] == 'nextAddress':
-                    sendMsg = 'Response|nextAddress|%s' % repr(self.nextAddress)
-                    self.sock.sendto(sendMsg, address)
-                elif data_splitted[1] == 'beforeAddress':
-                    sendMsg = 'Response|beforeAddress|%s' % repr(self.beforeAddress)
-                    self.sock.sendto(sendMsg, address)
-
-            # TODO: implementar toda a lógica
             
+            if len(data_splitted) == 1 and data_splitted[0] == 'info?':
+                # formato de resposta: id|id_ant|endr_ant|end_ant_do_ant|id_suc|end_suc|end_suc_do_suc
+                reply = str(self.id) + '|'
+                reply += str(self.previousID) + '|'
+                reply += str(self.previousAddress) + '|'
+                reply += str(self.previousPreviousAddress) + '|'
+                reply += str(self.nextID) + '|'
+                reply += str(self.nextAddress) + '|'
+                reply += str(self.nextNextAddress)
+                self.sock.sendto(reply, address)
+            else:
+                print 'Uh oh, unknown message coming from', address + ':', repr(data)
                       
 if len(sys.argv) == 5:
     peer = Peer((sys.argv[1], int(sys.argv[2])), (sys.argv[3], int(sys.argv[4])))
@@ -209,4 +202,4 @@ if len(sys.argv) == 5:
 else:
     print >>sys.stderr, 'usage: peer.py ip_address port rendezvous_ip_address rendezvous_port'
     sys.exit(1)
-            
+    
