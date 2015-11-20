@@ -6,9 +6,9 @@ import socket, sys, random
 
 ## Uma classe construída para representar um Peer externo do atual.
 class ExternalPeer:
-    def __init__(self, address, id, previousID, previousAddress, previousPreviousAddress, nextID, nextAddress, nextNextAddress):
+    def __init__(self, address, id_peer, previousID, previousAddress, previousPreviousAddress, nextID, nextAddress, nextNextAddress):
         self.address = address
-        self.id = id
+        self.id = id_peer
         self.previousID = previousID
         self.previousAddress = previousAddress
         self.previousPreviousAddress = previousPreviousAddress
@@ -107,7 +107,7 @@ class Peer:
         else:
             data_splitted = response.split('|')
             if len(data_splitted) == 3 and data_splitted[0] == 'ID':
-                self.id = data_splitted[1]
+                self.id = int(data_splitted[1])
                 self.isRoot = True if data_splitted[2] == 'root' else False
                 
                 # obtendo o endereço do root
@@ -128,27 +128,32 @@ class Peer:
         
         return rootAddress                  
 
+
     ## Atualiza os ponteiros de vizinhança dos peers vizinhos (inclusive vizinhos de vizinhos)
     def allocate(self):
-        setMsg = 'Set|nextID|' + str(self.id) + '|nextAddress|' + repr(self.address) + '|nextNextAddress|' + repr(self.nextAddress)
-        gotRightReply = False
-        # while not gotRightReply:
-        gotRightReply = True if 'Setted' in self.makeRequestMessage(setMsg, self.previousAddress) else False
+        if self.address != self.previousAddress:
+            setMsg = 'Set|nextID|' + str(self.id) + '|nextAddress|' + repr(self.address) + '|nextNextAddress|' + repr(self.nextAddress)
+            gotRightReply = False
+            while not gotRightReply:
+                gotRightReply = True if 'Setted' in self.makeRequestMessage(setMsg, self.previousAddress) else False
         
-        setMsg = 'Set|nextNextAddress|' + repr(self.address)
-        gotRightReply = False
-        # while not gotRightReply:
-        gotRightReply = True if 'Setted' in self.makeRequestMessage(setMsg, self.previousPreviousAddress) else False
+        if self.address != self.previousPreviousAddress:
+            setMsg = 'Set|nextNextAddress|' + repr(self.address)
+            gotRightReply = False
+            while not gotRightReply:
+                gotRightReply = True if 'Setted' in self.makeRequestMessage(setMsg, self.previousPreviousAddress) else False
         
-        setMsg = 'Set|previousID|' + str(self.id) + '|previousAddress|' + repr(self.address) + '|previousPreviousAddress|' + repr(self.previousAddress)
-        gotRightReply = False
-        # while not gotRightReply:
-        gotRightReply = True if 'Setted' in self.makeRequestMessage(setMsg, self.nextAddress) else False
+        if self.address != self.nextAddress:
+            setMsg = 'Set|previousID|' + str(self.id) + '|previousAddress|' + repr(self.address) + '|previousPreviousAddress|' + repr(self.previousAddress)
+            gotRightReply = False
+            while not gotRightReply:
+                gotRightReply = True if 'Setted' in self.makeRequestMessage(setMsg, self.nextAddress) else False
         
-        setMsg = 'Set|previousPreviousAddress|' + repr(self.address)
-        gotRightReply = False
-        # while not gotRightReply:
-        gotRightReply = True if 'Setted' in self.makeRequestMessage(setMsg, self.nextNextAddress) else False
+        if self.address != self.nextNextAddress:
+            setMsg = 'Set|previousPreviousAddress|' + repr(self.address)
+            gotRightReply = False
+            while not gotRightReply:
+                gotRightReply = True if 'Setted' in self.makeRequestMessage(setMsg, self.nextNextAddress) else False
         
         
     ## Executa as funcionalidades do Peer.
@@ -194,12 +199,8 @@ class Peer:
                         self.previousAddress = currPeer.address
                         self.previousPreviousAddress = currPeer.previousAddress if not isSecondElement else self.address
                         
-                        self.allocate()
-                        
                         print 'Inserting peer with ID', self.id, 'between', self.previousID, 'and', self.nextID
-                        print 'Previous Previous:', repr(self.previousPreviousAddress)
-                        print 'Next Next:', repr(self.nextNextAddress)
-                        
+                        self.allocate()                        
                         allocated = True
                     else:
                         currAddress = currPeer.nextAddress
@@ -215,12 +216,8 @@ class Peer:
                         self.previousAddress = currPeer.previousAddress
                         self.previousPreviousAddress = currPeer.previousPreviousAddress if not isSecondElement else self.address
                         
-                        self.allocate()
-                        
                         print 'Inserting peer with ID', self.id, 'between', self.previousID, 'and', self.nextID
-                        print 'Previous Previous:', repr(self.previousPreviousAddress)
-                        print 'Next Next:', repr(self.nextNextAddress)
-                        
+                        self.allocate()                        
                         allocated = True
                     else:
                         currAddress = currPeer.previousAddress
