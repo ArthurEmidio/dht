@@ -2,10 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import common
-import socket, sys, random
-
-## Quantos IDs poderão ser alocados.
-K = 50
+import socket, sys, random, math  
 
 ## Representa as funcionalidades de um Rendezvous
 class Rendezvous:
@@ -21,16 +18,41 @@ class Rendezvous:
     ## @var available_ids
     #  A lista de IDs disponíveis
     
+    ## @var root
+    #  O peer raiz da DHT.
+    
+    ## @var K
+    #  O número máximo de nós na rede.
+    
+    ## @var method
+    #  O método de como os IDs serão distribuídos na DHT. Caso seja 1, os IDs estarão na faixa [0,K]. Caso seja 2, os IDs estarão em potência de 2 (1, 2, 4, 8, ..., 2^K).
+    
     ## O construtor padrão.
     #
     #  @param address O endereço de rede correspondente ao rendezvous.
-    def __init__(self, address):
+    #  @param K O número máximo de nós na rede.
+    #  @param method O método de como os IDs serão distribuídos na DHT. Caso seja 1, os IDs estarão na faixa [0,K]. Caso seja 2, os IDs estarão em potência de 2 (1, 2, 4, 8, ..., 2^K).
+    def __init__(self, address, K, method):
         self.address = address
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.bind(self.address)
         self.peers = []
-        self.available_ids = range(0, K)
-
+        self.available_ids = [2**x for x in range(0, K+1)] if method == 2 else range(0, K+1)        
+        self.root = None
+        self.K = K
+        self.method = method
+    
+    ## Imprime todos os IDs que já foram alocados a Peers
+    def printPeers(self):
+        print '\nAllocated Peers:'
+        print '->',
+        for peer in self.peers:
+            if peer == self.root:
+                print str(peer.id) + ' (root) ->',
+            else:
+                print str(peer.id) + ' ->',
+        print '\n\n'  
+            
     ## Executa as funcionalidades do Rendezvous.
     def run(self):
         print 'Listening at', self.sock.getsockname()
@@ -39,7 +61,7 @@ class Rendezvous:
             data, address = self.sock.recvfrom(common.MAX)
             data_splitted = data.split('|')
             
-            print 'Got a message from', address
+            # print 'Got a message from', address
 
             # Recebendo um "hello" de algum peer
             if len(data_splitted) == 1 and data_splitted[0] == 'hello':
@@ -50,21 +72,32 @@ class Rendezvous:
                 if not already_exists:
                     random_index = random.randint(0, len(self.available_ids) - 1)
                     current_id = self.available_ids.pop(random_index)
+                                        
                     self.peers.append(Peer(current_id, repr(address)))
-                    print 'hello from a new peer, sending id', current_id
+                    self.peers.sort(key=lambda x: x.id)
+                    
+                    # print 'hello from a new peer, sending id', current_id
                 else:
                     current_id = existing[0].id
-                    print 'hello from an already existing peer, sending id', current_id
+                    # print 'hello from an already existing peer, sending id', current_id
 
                 # Enviando o ID do peer.
                 # Também envia "root" caso seja o 1o peer a entrar na rede ou o endereço do root caso contrário
                 message = 'ID|%s|' % str(current_id)
-                message += 'root' if len(self.peers) == 1 else self.peers[0].address
+                
+                if len(self.peers) == 1:
+                    self.root = self.peers[0]
+                    message += 'root'
+                else:
+                    message += self.root.address
+                
+                message += '|' + str(self.K) + '|' + str(self.method)
+
                 self.sock.sendto(message, address)
         
             # quando o rendezvous recebe um ACK de algum peer
             elif len(data_splitted) == 2 and data_splitted[0] == 'ACK':
-                print 'Got an ACK from peer', data_splitted[1]
+                # print 'Got an ACK from peer', data_splitted[1]
                 existing = [peer for peer in self.peers if peer.id == int(data_splitted[1])]
                 already_exists = len(existing) > 0
             
@@ -74,7 +107,21 @@ class Rendezvous:
                 peer = existing[0]
                 peer.valid = True
                 self.sock.sendto(data, address) # Enviando o mesmo ACK que foi recebido
-                print [peer.id for peer in self.peers] # imprimindo todos os IDs que já foram alocados a um peer
+                self.printPeers()
+            elif len(data_splitted) == 4 and data_splitted[2] == 'Removed':
+                messageID = int(data_splitted[1])
+                idRemoved = int(data_splitted[3])
+                print 'Peer with ID ' + str(idRemoved) + ' being removed'
+                
+                self.peers = filter(lambda x: x.id != idRemoved, self.peers)
+                self.available_ids.append(idRemoved)
+                  
+                self.available_ids.append(idRemoved)             
+                self.peers.sort(key=lambda x: x.id)
+                self.sock.sendto('False|' + str(messageID) + '|Removed', address)
+                self.printPeers()
+            else:                
+                print 'Unknown message from ' + repr(address) + ': ' + data
                 
                           
 ## Representa a estrutura de um Peer visto pelo Rendezvous.
@@ -101,9 +148,9 @@ class Peer:
         self.valid = False
         
                
-if len(sys.argv) == 3:
-    rendezvous = Rendezvous((sys.argv[1], int(sys.argv[2])))
+if len(sys.argv) == 5:
+    rendezvous = Rendezvous((sys.argv[1], int(sys.argv[2])), int(sys.argv[3]), int(sys.argv[4]))
     rendezvous.run()
 else:
-    print >>sys.stderr, 'usage: rendezvous.py ip_address port'
+    print >>sys.stderr, 'usage: rendezvous.py ip_address port K method<1 or 2>'
     sys.exit(1)
