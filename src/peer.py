@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import common
-import socket, sys, random, threading, time, Queue
+import socket, sys, random, threading, time, Queue, hashlib
 
 ## Uma classe construída para representar um Peer externo do atual.
 class ExternalPeer:
@@ -227,22 +227,22 @@ class Peer:
         if self.address != self.previousAddress:
             setMsg = 'Set|nextID|' + str(self.id) + '|nextAddress|' + repr(self.address) + '|nextNextAddress|' + repr(self.nextAddress)
             # print 'Sending to '+ repr(self.previousAddress) +': ' + setMsg
-            self.sendRequest(setMsg, self.previousAddress, 2.0)
+            self.sendRequest(setMsg, self.previousAddress, 1.0)
         
         if self.address != self.previousPreviousAddress:
             setMsg = 'Set|nextNextAddress|' + repr(self.address)
             # print 'Sending to '+ repr(self.previousPreviousAddress) +': ' + setMsg
-            self.sendRequest(setMsg, self.previousPreviousAddress, 2.0)
+            self.sendRequest(setMsg, self.previousPreviousAddress, 1.0)
         
         if self.address != self.nextAddress:
             setMsg = 'Set|previousID|' + str(self.id) + '|previousAddress|' + repr(self.address) + '|previousPreviousAddress|' + repr(self.previousAddress)
             # print 'Sending to '+ repr(self.nextAddress) +': ' + setMsg
-            self.sendRequest(setMsg, self.nextAddress, 2.0)
+            self.sendRequest(setMsg, self.nextAddress, 1.0)
         
         if self.address != self.nextNextAddress:
             setMsg = 'Set|previousPreviousAddress|' + repr(self.address)
             # print 'Sending to '+ repr(self.nextNextAddress) +': ' + setMsg
-            self.sendRequest(setMsg, self.nextNextAddress, 2.0)
+            self.sendRequest(setMsg, self.nextNextAddress, 1.0)
             
         # print '\n'
             
@@ -307,15 +307,18 @@ class Peer:
         while True:
             time.sleep(3.0) # executar de 3 em 3s
             
+            # print 'sucessor: ' + repr(self.nextAddress)
+            
             if self.address != self.nextAddress:
                 try:
-                    result = self.sendRequest('Ping', self.nextAddress, 2.0)
+                    result = self.sendRequest('Ping', self.nextAddress, 3.0)
                 except socket.timeout:
                     # remover peer sucessor
-                    self.sendRequest('Removed|' + str(self.nextID), self.rendezvousAddress, 2.0)
+                    # print 'removendo sucessor...'
+                    self.sendRequest('Removed|' + str(self.nextID), self.rendezvousAddress, 1.0)
                     
                     if self.nextNextAddress != self.address:                        
-                        reply = self.sendRequest('Request|ID|nextAddress', self.nextNextAddress, 2.0)
+                        reply = self.sendRequest('Request|ID|nextAddress', self.nextNextAddress, 1.0)
                         
                         with self.lock:
                             self.previousPreviousAddress = self.address if self.previousPreviousAddress == self.nextAddress else self.previousPreviousAddress # tratando o caso de quando há 3 peers na DHT
@@ -332,17 +335,56 @@ class Peer:
                             self.previousID = self.id
                             self.previousAddress = self.address
                             self.previousPreviousAddress = self.address
-                                        
-    
+       
+                             
+    ## Dado uma string, tem como saída um número 0 e K, tendo como base o algoritmo de Hash MD5.
+    #
+    #  Caso o método de criação de IDs seja o de potência de 2 (i.e. self.method == 2), a saída dessa função será uma potência de 2.
+    #
+    #  @param key A string em que será aplicado a função de Hash.
+    #  @return O resultado do hash módulo K.
+    def hashKey(self, key):
+        md5Result = hashlib.md5(str(key))
+        md5ResultDec = int(md5Result.hexdigest(), 16)
+        hashResult = md5ResultDec % self.K
+        return hashResult if self.method == 1 else 2**hashResult
+
+
     ## Função que rodará numa thread para receber entrada do usuário e fazer a pesquisa por qual peer na DHT possui a entrada do usuário.
     def listenForInput(self):
         time.sleep(2)
         while True:
             query = raw_input('Consulte por: ')
-            print query
-            # TODO: aplicar uma hash function em query
-            # TODO: pegar esse resultado e consultar na DHT por quem é responsável por esse 'dado'
-            
+            keySearch = self.hashKey(query)
+            sendMsgId = None
+            acked = False
+            found = False
+            ownerID = None
+            ownerAddress = None
+
+            if (self.id >= keySearch and (self.previousID < keySearch or self.id < self.previousID)) or self.id == self.previousID or (self.id <= keySearch and self.id < self.previousID):
+                ownerID = self.id
+                ownerAddress = self.address
+            else:
+                queryID = None
+                with self.lock:
+                    queryID = self.messageID
+                    self.messageID += 1
+
+                message = 'Search|' + str(keySearch) + '|' + repr(self.address) + '|' + str(queryID)
+                self.messagesReceivedNeededToBeReplied.append({'MessageID': 0, 'Message': message, 'FromAddress': self.address})
+
+                while not queryID in self.messagesReceived:
+                    pass
+
+                result = self.messagesReceived.pop(queryID)
+                resultMessage = result['Message'].split('|')
+
+                ownerAddress = common.strToAddr(resultMessage[2])
+                ownerID = int(resultMessage[3])
+
+            print 'The peer with ID ' + str(ownerID) + ' ' + repr(ownerAddress) + ' has the file ' + query + ' (key = ' + str(keySearch) + ')'
+
       
     ## Executa as funcionalidades do Peer.
     def run(self):
@@ -371,7 +413,7 @@ class Peer:
             allocated = False
             while not allocated:
                 request = 'Request|ID|previousID|previousAddress|previousPreviousAddress|nextID|nextAddress|nextNextAddress'
-                data_splitted = self.sendRequest(request, currAddress, 2.0)
+                data_splitted = self.sendRequest(request, currAddress, 1.0)
                 
                 # formato de resposta: id|id_ant|endr_ant|end_ant_do_ant|id_suc|end_suc|end_suc_do_suc
                 if len(data_splitted) != 8 or data_splitted[0] != 'Reply':
@@ -395,7 +437,7 @@ class Peer:
                             self.previousAddress = currPeer.address
                             self.previousPreviousAddress = currPeer.previousAddress if not isSecondElement else self.address
                         
-                        # print 'Inserting peer with ID', self.id, 'between', self.previousID, 'and', self.nextID
+                        print 'Inserting peer with ID', self.id, 'between', self.previousID, 'and', self.nextID
                         self.allocate()                        
                         allocated = True
                     else:
@@ -413,7 +455,7 @@ class Peer:
                             self.previousAddress = currPeer.previousAddress
                             self.previousPreviousAddress = currPeer.previousPreviousAddress if not isSecondElement else self.address
                         
-                        # print 'Inserting peer with ID', self.id, 'between', self.previousID, 'and', self.nextID
+                        print 'Inserting peer with ID', self.id, 'between', self.previousID, 'and', self.nextID
                         self.allocate()                        
                         allocated = True
                     else:
@@ -427,9 +469,9 @@ class Peer:
         thread_ping.daemon = True
         thread_ping.start()
         
-        # thread_IO = threading.Thread(target=self.listenForInput)
-        # thread_IO.daemon = True
-        # thread_IO.start()
+        thread_IO = threading.Thread(target=self.listenForInput)
+        thread_IO.daemon = True
+        thread_IO.start()
         
         # Loop ouvindo por contato de outros Peers
         print '\nListening at', self.sock.getsockname()
@@ -489,26 +531,32 @@ class Peer:
                 
             elif data_splitted[0] == 'Search':
                 keySearch = int(data_splitted[1])
-                addressSearching = strToAddr(data_splitted[2])
+                addressSearching = common.strToAddr(data_splitted[2])
                 queryID = int(data_splitted[3])
                 
-                self.replyTo(msgID, 'Searching', address) # mandando um ACK para o Peer que pediu pela pesquisa
+                if self.address != addressSearching:
+                    self.replyTo(msgID, 'Searching', address) # mandando um ACK para o Peer que pediu pela pesquisa
                 
-                if (self.id >= keySearch and (self.previousID < keySearch or self.id < self.previousID)) or self.id == self.previousID:
-                    # achou
+                if (self.id >= keySearch and (self.previousID < keySearch or self.id < self.previousID)) or self.id == self.previousID or (self.id <= keySearch and self.id < self.previousID):
+                    # encontrou
                     reply = 'Found|' + str(queryID) + '|' + str(self.address) + '|' + str(self.id)
-                    self.sendRequest(reply, addressSearching, 2.0, queryID)
+                    self.sendRequest(reply, addressSearching, 1.0)
                     
                 elif self.id > keySearch:
                     # enviar request para self.previousAddress
                     reply = 'Search|' + str(keySearch) + '|' + repr(addressSearching) + '|' + str(queryID)                    
-                    self.sendRequest(reply, self.previousAddress, 2.0)
-                    
+                    self.sendRequest(reply, self.previousAddress, 1.0)
+                                        
                 elif self.id < keySearch:
                     # enviar request para self.nextAddress
                     reply = 'Search|' + str(keySearch) + '|' + repr(addressSearching) + '|' + str(queryID)                    
-                    self.sendRequest(reply, self.nextAddress, 2.0)
+                    self.sendRequest(reply, self.nextAddress, 1.0)
 
+            elif data_splitted[0] == 'Found':
+                queryResultID = int(data_splitted[1])
+                self.messagesReceived[queryResultID] = {'MessageID': queryResultID, 'HasTimeout': False, 'Message': data, 'FromAddress': common.strToAddr(data_splitted[2]), 'Acknowledged': True}
+                
+                self.replyTo(msgID, 'FoundACK', address)
             else:
                 print 'Uh oh, unknown message coming from' + repr(address) + ':', repr(data)
 
