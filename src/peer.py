@@ -133,13 +133,20 @@ class Peer:
     #  @var sendMsg A mensagem que será enviada.
     #  @var address O endereço de destino, no formato: ('ip', porta).
     #  @var timeout O tempo, em segundos, de espera máximo por uma resposta.
+    #  @var optMessageID O ID da mensagem que será enviada. Caso não seja passada, um ID único será gerado.
     #  @return A responta da mensagem já cortada (por '|').
-    def sendRequest(self, sendMsg, address, timeout):
+    def sendRequest(self, sendMsg, address, timeout, optMessageID = None):
         thisMessageID = None
-        with self.lock:
-            thisMessageID = self.messageID
-            self.messagesToBeSent.put({'MessageID': thisMessageID, 'Message': sendMsg, 'ToAddress': address, 'Timeout': timeout})
-            self.messageID += 1
+        
+        if optMessageID != None:
+            with self.lock:
+                thisMessageID = optMessageID
+                self.messagesToBeSent.put({'MessageID': thisMessageID, 'Message': sendMsg, 'ToAddress': address, 'Timeout': timeout})
+        else:
+            with self.lock:
+                thisMessageID = self.messageID
+                self.messagesToBeSent.put({'MessageID': thisMessageID, 'Message': sendMsg, 'ToAddress': address, 'Timeout': timeout})
+                self.messageID += 1
         
         while not thisMessageID in self.messagesReceived:
             pass
@@ -480,6 +487,28 @@ class Peer:
                 reply = 'Pinged'
                 self.replyTo(msgID, reply, address)
                 
+            elif data_splitted[0] == 'Search':
+                keySearch = int(data_splitted[1])
+                addressSearching = strToAddr(data_splitted[2])
+                queryID = int(data_splitted[3])
+                
+                self.replyTo(msgID, 'Searching', address) # mandando um ACK para o Peer que pediu pela pesquisa
+                
+                if (self.id >= keySearch and (self.previousID < keySearch or self.id < self.previousID)) or self.id == self.previousID:
+                    # achou
+                    reply = 'Found|' + str(queryID) + '|' + str(self.address) + '|' + str(self.id)
+                    self.sendRequest(reply, addressSearching, 2.0, queryID)
+                    
+                elif self.id > keySearch:
+                    # enviar request para self.previousAddress
+                    reply = 'Search|' + str(keySearch) + '|' + repr(addressSearching) + '|' + str(queryID)                    
+                    self.sendRequest(reply, self.previousAddress, 2.0)
+                    
+                elif self.id < keySearch:
+                    # enviar request para self.nextAddress
+                    reply = 'Search|' + str(keySearch) + '|' + repr(addressSearching) + '|' + str(queryID)                    
+                    self.sendRequest(reply, self.nextAddress, 2.0)
+
             else:
                 print 'Uh oh, unknown message coming from' + repr(address) + ':', repr(data)
 
