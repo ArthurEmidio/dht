@@ -25,7 +25,7 @@ Com isso feito, a documentação em HTML estará em docs/html/ e em LaTeX estar�
 * [Hands on: Sockets em Python](https://blog.butecopensource.org/hands-on-sockets-em-python/)
 * [Doxygen + Python](https://www.stack.nl/~dimitri/doxygen/manual/docblocks.html#pythonblocks)
 * [Especificação do Trabalho](https://drive.google.com/file/d/0B_YEQWAPOAO3Zzh1ZFhxWGtiWVU/view?usp=sharing)
-* [Livro: Foundations of Python Network Programming](https://drive.google.com/file/d/0B_YEQWAPOAO3WldFdTlScmdFUDg/view?usp=sharing) (cap. 2 é sobre UDP, ler ele é uma boa).
+* Livro: Foundations of Python Network Programming (cap. 2 é sobre UDP, ler ele é uma boa).
 
 ## Desenvolvedores
 * André Accioly Lima
