@@ -243,9 +243,7 @@ class Peer:
             setMsg = 'Set|previousPreviousAddress|' + repr(self.address)
             # print 'Sending to '+ repr(self.nextNextAddress) +': ' + setMsg
             self.sendRequest(setMsg, self.nextNextAddress, 1.0)
-            
-        # print '\n'
-            
+                        
             
     ## Função que rodará numa thread para salvar as mensagens recebidas em self.messagesReceivedNeededToBeReplied ou self.messagesReceived, de acordo com o tipo de mensagem.
     def saveReceivedMessages(self):
@@ -306,15 +304,12 @@ class Peer:
     def pingNext(self):
         while True:
             time.sleep(3.0) # executar de 3 em 3s
-            
-            # print 'sucessor: ' + repr(self.nextAddress)
-            
+                        
             if self.address != self.nextAddress:
                 try:
                     result = self.sendRequest('Ping', self.nextAddress, 3.0)
                 except socket.timeout:
                     # remover peer sucessor
-                    # print 'removendo sucessor...'
                     self.sendRequest('Removed|' + str(self.nextID), self.rendezvousAddress, 1.0)
                     
                     if self.nextNextAddress != self.address:                        
@@ -415,7 +410,6 @@ class Peer:
                 request = 'Request|ID|previousID|previousAddress|previousPreviousAddress|nextID|nextAddress|nextNextAddress'
                 data_splitted = self.sendRequest(request, currAddress, 1.0)
                 
-                # formato de resposta: id|id_ant|endr_ant|end_ant_do_ant|id_suc|end_suc|end_suc_do_suc
                 if len(data_splitted) != 8 or data_splitted[0] != 'Reply':
                     print >>sys.stderr, 'Got an unknown message from peer at address', repr(currAddress), ':', '|'.join(data_splitted)
                     exit(2)
