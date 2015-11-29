@@ -227,22 +227,22 @@ class Peer:
         if self.address != self.previousAddress:
             setMsg = 'Set|nextID|' + str(self.id) + '|nextAddress|' + repr(self.address) + '|nextNextAddress|' + repr(self.nextAddress)
             # print 'Sending to '+ repr(self.previousAddress) +': ' + setMsg
-            self.sendRequest(setMsg, self.previousAddress, 1.0)
+            self.sendRequest(setMsg, self.previousAddress, 3.0)
         
         if self.address != self.previousPreviousAddress:
             setMsg = 'Set|nextNextAddress|' + repr(self.address)
             # print 'Sending to '+ repr(self.previousPreviousAddress) +': ' + setMsg
-            self.sendRequest(setMsg, self.previousPreviousAddress, 1.0)
+            self.sendRequest(setMsg, self.previousPreviousAddress, 3.0)
         
         if self.address != self.nextAddress:
             setMsg = 'Set|previousID|' + str(self.id) + '|previousAddress|' + repr(self.address) + '|previousPreviousAddress|' + repr(self.previousAddress)
             # print 'Sending to '+ repr(self.nextAddress) +': ' + setMsg
-            self.sendRequest(setMsg, self.nextAddress, 1.0)
+            self.sendRequest(setMsg, self.nextAddress, 3.0)
         
         if self.address != self.nextNextAddress:
             setMsg = 'Set|previousPreviousAddress|' + repr(self.address)
             # print 'Sending to '+ repr(self.nextNextAddress) +': ' + setMsg
-            self.sendRequest(setMsg, self.nextNextAddress, 1.0)
+            self.sendRequest(setMsg, self.nextNextAddress, 3.0)
                         
             
     ## Função que rodará numa thread para salvar as mensagens recebidas em self.messagesReceivedNeededToBeReplied ou self.messagesReceived, de acordo com o tipo de mensagem.
@@ -310,10 +310,10 @@ class Peer:
                     result = self.sendRequest('Ping', self.nextAddress, 3.0)
                 except socket.timeout:
                     # remover peer sucessor
-                    self.sendRequest('Removed|' + str(self.nextID), self.rendezvousAddress, 1.0)
+                    self.sendRequest('Removed|' + str(self.nextID), self.rendezvousAddress, 3.0)
                     
                     if self.nextNextAddress != self.address:                        
-                        reply = self.sendRequest('Request|ID|nextAddress', self.nextNextAddress, 1.0)
+                        reply = self.sendRequest('Request|ID|nextAddress', self.nextNextAddress, 3.0)
                         
                         with self.lock:
                             self.previousPreviousAddress = self.address if self.previousPreviousAddress == self.nextAddress else self.previousPreviousAddress # tratando o caso de quando há 3 peers na DHT
@@ -408,7 +408,7 @@ class Peer:
             allocated = False
             while not allocated:
                 request = 'Request|ID|previousID|previousAddress|previousPreviousAddress|nextID|nextAddress|nextNextAddress'
-                data_splitted = self.sendRequest(request, currAddress, 1.0)
+                data_splitted = self.sendRequest(request, currAddress, 3.0)
                 
                 if len(data_splitted) != 8 or data_splitted[0] != 'Reply':
                     print >>sys.stderr, 'Got an unknown message from peer at address', repr(currAddress), ':', '|'.join(data_splitted)
@@ -534,17 +534,17 @@ class Peer:
                 if (self.id >= keySearch and (self.previousID < keySearch or self.id < self.previousID)) or self.id == self.previousID or (self.id <= keySearch and self.id < self.previousID):
                     # encontrou
                     reply = 'Found|' + str(queryID) + '|' + str(self.address) + '|' + str(self.id)
-                    self.sendRequest(reply, addressSearching, 1.0)
+                    self.sendRequest(reply, addressSearching, 3.0)
                     
                 elif self.id > keySearch:
                     # enviar request para self.previousAddress
                     reply = 'Search|' + str(keySearch) + '|' + repr(addressSearching) + '|' + str(queryID)                    
-                    self.sendRequest(reply, self.previousAddress, 1.0)
+                    self.sendRequest(reply, self.previousAddress, 3.0)
                                         
                 elif self.id < keySearch:
                     # enviar request para self.nextAddress
                     reply = 'Search|' + str(keySearch) + '|' + repr(addressSearching) + '|' + str(queryID)                    
-                    self.sendRequest(reply, self.nextAddress, 1.0)
+                    self.sendRequest(reply, self.nextAddress, 3.0)
 
             elif data_splitted[0] == 'Found':
                 queryResultID = int(data_splitted[1])
