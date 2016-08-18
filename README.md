@@ -25,6 +25,6 @@ Para gerar a documentação, rode o seguinte comando na raiz do projeto: ```doxy
 Com isso feito, a documentação em HTML estará em docs/html/ e em LaTeX estará em docs/latex/.
 
 ## Desenvolvedores
-* @ArthurEmidio
-* @Roffelos
-* @caducabral
+* [@ArthurEmidio](https://github.com/ArthurEmidio)
+* [@Roffelos](https://github.com/Roffelos)
+* [@caducabral](https://github.com/caducabral)
